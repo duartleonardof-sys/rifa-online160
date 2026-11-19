@@ -1,0 +1,247 @@
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101d35">
+<title>Rifa Online | 160 números</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#101d35;--green:#dcfce7;--greenText:#166534;--gray:#e5e7eb;--grayText:#6b7280;--bg:#f3f5f8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);font-family:Arial,sans-serif;color:#172033}
+header{background:var(--navy);color:white;text-align:center;padding:28px 16px}
+header h1{margin:0 0 8px;font-size:27px}
+header p{margin:0;color:#d5deed}
+main{max-width:850px;margin:22px auto;padding:0 14px}
+.panel{background:white;border-radius:16px;padding:17px;box-shadow:0 3px 14px #14213b12;margin-bottom:15px}
+.stats{display:flex;gap:10px;flex-wrap:wrap}
+.stat{flex:1;min-width:100px;background:#f7f8fa;border-radius:12px;padding:12px;text-align:center}
+.stat strong{display:block;font-size:24px}
+.stat span{font-size:12px;color:#667085}
+.legend{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;font-size:13px;color:#596273;margin:12px 0}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
+.grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:8px}
+.num{border:0;border-radius:9px;padding:10px 2px;background:var(--green);color:var(--greenText);font-weight:bold;cursor:pointer;min-height:48px}
+.num.sold{background:var(--gray);color:var(--grayText);cursor:not-allowed}
+.num:disabled{opacity:1}
+.note{font-size:13px;color:#687386;line-height:1.5}
+label{display:block;font-size:13px;font-weight:bold;margin:12px 0 6px}
+input{width:100%;padding:12px;border:1px solid #ccd2dc;border-radius:9px;font-size:16px}
+button.primary{width:100%;border:0;border-radius:10px;background:var(--navy);color:white;padding:13px;font-size:16px;font-weight:bold;margin-top:15px;cursor:pointer}
+button.secondary{border:1px solid #ccd2dc;border-radius:9px;background:white;padding:10px 13px;cursor:pointer}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:16px;z-index:5}
+.modal.open{display:flex}
+.dialog{background:white;border-radius:16px;padding:20px;width:min(100%,430px);max-height:90vh;overflow:auto}
+.dialog h2{margin:0 0 6px}
+.dialog p{color:#667085;font-size:14px}
+#status{margin:12px 0;font-size:14px}
+.error{color:#b42318}
+.success{color:#067647}
+@media(max-width:520px){
+.grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
+.num{min-height:44px}
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>RIFA PREMIADA</h1>
+<p>Escolha seu número e participe!</p>
+</header>
+
+<main>
+<section class="panel">
+<div class="stats">
+<div class="stat"><strong id="total">160</strong><span>Números no total</span></div>
+<div class="stat"><strong id="available">...</strong><span>Disponíveis</span></div>
+<div class="stat"><strong id="sold">...</strong><span>Vendidos</span></div>
+</div>
+<p class="note" style="text-align:center;margin-bottom:0">
+Toque em um número disponível para registrar a venda.
+</p>
+</section>
+
+<section class="panel">
+<div class="legend">
+<span><i class="dot" style="background:#dcfce7"></i>Disponível</span>
+<span><i class="dot" style="background:#e5e7eb"></i>Vendido</span>
+</div>
+<div id="numbers" class="grid"></div>
+<p id="status" class="note" role="status">Carregando números...</p>
+</section>
+
+<p class="note">
+Os dados de contato do comprador não aparecem publicamente.
+</p>
+</main>
+
+<div class="modal" id="modal">
+<div class="dialog">
+<h2>Registrar venda</h2>
+<p id="chosen">Número selecionado</p>
+
+<form id="saleForm">
+<label for="buyer">Nome do comprador</label>
+<input id="buyer" maxlength="100" required placeholder="Nome completo">
+
+<label for="phone">WhatsApp do comprador</label>
+<input id="phone" type="tel" maxlength="20" required placeholder="(DDD) 99999-9999">
+
+<label for="seller">Nome de quem está vendendo</label>
+<input id="seller" maxlength="100" required placeholder="Seu nome">
+
+<button class="primary" id="save" type="submit">Confirmar venda</button>
+<button class="secondary" style="width:100%;margin-top:9px" type="button" id="cancel">Cancelar</button>
+<div id="formMessage" role="status"></div>
+</form>
+</div>
+</div>
+
+<script>
+// CONEXÃO COM O SUPABASE
+const SUPABASE_URL = "https://bjwyirlhkmaknkbpxizr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_7omXPv_qL2lnpicNB0I58A_-3bVFKj8";
+
+const TOTAL_NUMEROS = 160;
+const db = window.supabase.createClient(
+SUPABASE_URL,
+SUPABASE_ANON_KEY
+);
+
+let selectedNumber = null;
+
+const numbersEl = document.getElementById("numbers");
+const statusEl = document.getElementById("status");
+const modal = document.getElementById("modal");
+const sellerInput = document.getElementById("seller");
+
+sellerInput.value = localStorage.getItem("rifa_nome_vendedor") || "";
+
+function showMessage(message,type=""){
+const el=document.getElementById("formMessage");
+el.className=type;
+el.textContent=message;
+}
+
+function openSale(n){
+selectedNumber=n;
+document.getElementById("chosen").textContent=
+"Número escolhido: "+String(n).padStart(3,"0");
+document.getElementById("buyer").value="";
+document.getElementById("phone").value="";
+showMessage("");
+modal.classList.add("open");
+}
+
+function closeSale(){
+modal.classList.remove("open");
+selectedNumber=null;
+}
+
+document.getElementById("cancel").addEventListener("click",closeSale);
+
+modal.addEventListener("click",e=>{
+if(e.target===modal)closeSale();
+});
+
+function drawNumbers(soldSet){
+numbersEl.innerHTML="";
+
+for(let n=1;n<=TOTAL_NUMEROS;n++){
+const sold=soldSet.has(n);
+const b=document.createElement("button");
+
+b.type="button";
+b.className="num"+(sold?" sold":"");
+b.textContent=String(n).padStart(3,"0");
+b.disabled=sold;
+
+if(!sold){
+b.addEventListener("click",()=>openSale(n));
+}else{
+b.title="Número vendido";
+}
+
+numbersEl.appendChild(b);
+}
+
+document.getElementById("sold").textContent=soldSet.size;
+document.getElementById("available").textContent=
+TOTAL_NUMEROS-soldSet.size;
+}
+
+async function loadNumbers(){
+statusEl.textContent="Atualizando números...";
+
+const {data,error}=await db
+.from("rifa_numeros")
+.select("numero")
+.eq("vendido",true);
+
+if(error){
+statusEl.className="note error";
+statusEl.textContent="Erro ao carregar números. Confira o banco Supabase.";
+return;
+}
+
+drawNumbers(new Set((data||[]).map(x=>x.numero)));
+
+statusEl.className="note";
+statusEl.textContent="Lista atualizada. Números vendidos bloqueados.";
+}
+
+document.getElementById("saleForm").addEventListener("submit",async e=>{
+e.preventDefault();
+
+if(!selectedNumber)return;
+
+const buyer=document.getElementById("buyer").value.trim();
+const phone=document.getElementById("phone").value.trim();
+const seller=sellerInput.value.trim();
+
+if(!buyer||!phone||!seller){
+showMessage("Preencha todos os campos.","error");
+return;
+}
+
+localStorage.setItem("rifa_nome_vendedor",seller);
+
+const save=document.getElementById("save");
+save.disabled=true;
+save.textContent="Salvando...";
+
+const {error}=await db.rpc("registrar_venda_rifa",{
+p_numero:selectedNumber,
+p_comprador_nome:buyer,
+p_comprador_telefone:phone,
+p_vendedor_nome:seller
+});
+
+save.disabled=false;
+save.textContent="Confirmar venda";
+
+if(error){
+showMessage(
+error.message.includes("já foi vendido")
+?"Esse número já foi vendido. Escolha outro."
+:"Não foi possível registrar. Tente novamente.",
+"error"
+);
+await loadNumbers();
+return;
+}
+
+showMessage("Venda registrada com sucesso!","success");
+await loadNumbers();
+
+setTimeout(closeSale,1000);
+});
+
+loadNumbers();
+setInterval(loadNumbers,15000);
+</script>
+</body>
+</html>
